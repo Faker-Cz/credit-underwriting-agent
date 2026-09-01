@@ -1,0 +1,7 @@
+interface:
+  display_name: "对公授信调查报告助手"
+  short_description: "主代理编制授信报告并调度财务分析专门代理复核"
+  default_prompt: "Use $corporate-credit-investigation-cn to compile a Chinese corporate credit report from an authorized local template, delegate the financial review, and reconcile every linked field."
+
+policy:
+  allow_implicit_invocation: true

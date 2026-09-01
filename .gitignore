@@ -1,0 +1,26 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+rendered/
+tmp/
+*.pdf
+
+# 客户材料与敏感数据
+客户资料/
+审计报告/
+征信报告/
+身份证/
+工商资料/
+工作底稿/
+*.bak
+*.tmp
+
+# 含样例客户财务数据，须由使用者在本地私下提供
+skill/corporate-credit-investigation-cn/assets/working-capital-calculation-template.xlsx
+
+# 机构内部或本地生成的 Word 模板不向公开仓库分发
+skill/corporate-credit-investigation-cn/assets/*.docx
