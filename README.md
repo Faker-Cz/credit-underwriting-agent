@@ -21,8 +21,8 @@ scripts/
 - 建立来源台账并校验报表内、跨表和跨年勾稽；
 - 通过财务分析专门代理协议完成偿债、营运、盈利、成长和现金流分析；
 - 编制授信方案、非财务、融资及或有负债、担保和风险管控分析；
-- 在本地生成通用 Word 报告；
-- 正文和表格采用宋体小四，可选择项使用 Word 原生可点击复选框；
+- 在用户授权的本地 Word 模板中定点补充报告内容；
+- 只补充或替换既有填写位置，不改动全文排版、格式、字体、字号、表格结构、页眉页脚或分页设置；
 - 对最终 DOCX 和流动资金测算工作簿执行结构化审计。
 
 ## 安装 Skill
@@ -58,8 +58,10 @@ python scripts/generate_credit_report_template.py --output <local-docx-path>
 如使用机构内部正式 Word 模板，应在获得授权后仅放入本地：
 
 ```text
-skill/corporate-credit-investigation-cn/assets/
+skill/corporate-credit-investigation-cn/assets/授信报告模版-skill.docx
 ```
+
+该文件作为本地默认授信报告模板使用，不再沿用旧2018版模板，并继续受`.gitignore`保护，不提交到公开仓库。
 
 流动资金测算工作簿的样例文件可能含实际数值，因此未提交。使用者应将内部批准使用的工作簿放在：
 
