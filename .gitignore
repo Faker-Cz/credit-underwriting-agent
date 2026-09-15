@@ -20,7 +20,7 @@ tmp/
 *.tmp
 
 # 含样例客户财务数据，须由使用者在本地私下提供
-skill/corporate-credit-investigation-cn/assets/working-capital-calculation-template.xlsx
+skill/corporate-credit-investigation-cn/assets/*.xlsx
 
 # 机构内部或本地生成的 Word 模板不向公开仓库分发
 skill/corporate-credit-investigation-cn/assets/*.docx

@@ -8,6 +8,9 @@ from openpyxl import load_workbook
 
 
 NUMBER_PATTERN = re.compile(r"^[+-]?(?:\d{1,3}(?:[,，]\d{3})+|\d+)(?:\.\d+)?%?$")
+MIXED_AMOUNT_RATIO_PATTERN = re.compile(
+    r"^[+-]?(?:\d{1,3}(?:[,，]\d{3})+|\d+)(?:\.\d+)?\s*[（(][^）)]*[）)]$"
+)
 BALANCE_PAIRS = (
     ("资产总计", "负债和所有者权益总计"),
     ("资产总计", "负债及所有者权益总计"),
@@ -71,6 +74,7 @@ def main():
     for sheet in workbook.worksheets:
         labels, duplicate_labels = find_labels(sheet)
         text_numbers = []
+        mixed_amount_ratio_cells = []
         formulas = []
         errors = []
         hidden_rows = [index for index, dimension in sheet.row_dimensions.items() if dimension.hidden]
@@ -85,6 +89,8 @@ def main():
                     stripped = value.strip()
                     if NUMBER_PATTERN.fullmatch(stripped):
                         text_numbers.append({"cell": cell.coordinate, "value": stripped})
+                    if MIXED_AMOUNT_RATIO_PATTERN.fullmatch(stripped):
+                        mixed_amount_ratio_cells.append({"cell": cell.coordinate, "value": stripped})
                 if cell.data_type == "e":
                     errors.append({"cell": cell.coordinate, "value": value})
 
@@ -94,6 +100,7 @@ def main():
             "merged_ranges": [str(item) for item in sheet.merged_cells.ranges],
             "duplicate_labels": duplicate_labels,
             "numeric_values_stored_as_text": text_numbers,
+            "mixed_amount_ratio_cells": mixed_amount_ratio_cells,
             "formula_cells": formulas,
             "error_cells": errors,
             "hidden_rows": hidden_rows,
@@ -112,6 +119,10 @@ def main():
 
         if text_numbers:
             report["issues"].append(f"{sheet.title}: 存在{len(text_numbers)}个疑似文本数字")
+        if mixed_amount_ratio_cells:
+            report["issues"].append(
+                f"{sheet.title}: 存在{len(mixed_amount_ratio_cells)}个金额与比例/横线混写单元格"
+            )
         if errors:
             report["issues"].append(f"{sheet.title}: 存在{len(errors)}个Excel错误值")
         if args.pure_values and formulas:

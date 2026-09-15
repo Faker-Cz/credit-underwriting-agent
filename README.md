@@ -21,6 +21,8 @@ scripts/
 - 建立来源台账并校验报表内、跨表和跨年勾稽；
 - 通过财务分析专门代理协议完成偿债、营运、盈利、成长和现金流分析；
 - 编制授信方案、非财务、融资及或有负债、担保和风险管控分析；
+- 区分低风险、一般授信、高风险／复杂项目及上市公司等报告模式，按审批需要调整分析深度；
+- 以客户经理口吻形成“事实与数据—业务原因—偿债或授信意义—风险边界”的完整逻辑链；
 - 在用户授权的本地 Word 模板中定点补充报告内容；
 - 只补充或替换既有填写位置，不改动全文排版、格式、字体、字号、表格结构、页眉页脚或分页设置；
 - 对最终 DOCX 和流动资金测算工作簿执行结构化审计。
@@ -66,7 +68,7 @@ skill/corporate-credit-investigation-cn/assets/授信报告模版-skill.docx
 流动资金测算工作簿的样例文件可能含实际数值，因此未提交。使用者应将内部批准使用的工作簿放在：
 
 ```text
-skill/corporate-credit-investigation-cn/assets/working-capital-calculation-template.xlsx
+skill/corporate-credit-investigation-cn/assets/流动资金类贷款授信额度测算表.xlsx
 ```
 
 不得向公开仓库提交任何客户数据或访问凭据。
