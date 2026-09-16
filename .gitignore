@@ -22,5 +22,8 @@ tmp/
 # 含样例客户财务数据，须由使用者在本地私下提供
 skill/corporate-credit-investigation-cn/assets/*.xlsx
 
-# 机构内部或本地生成的 Word 模板不向公开仓库分发
+# 机构内部或本地生成的其他 Word 文件不向公开仓库分发；
+# 下列两份经用户确认的空白标准模板作为 Skill 资产入库。
 skill/corporate-credit-investigation-cn/assets/*.docx
+!skill/corporate-credit-investigation-cn/assets/单一客户授信调查报告模版.docx
+!skill/corporate-credit-investigation-cn/assets/低风险报告模版.docx

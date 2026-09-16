@@ -10,7 +10,7 @@ skill/corporate-credit-investigation-cn/
 ├── agents/openai.yaml        # Codex Agent 展示及默认调用配置
 ├── references/               # 财务、授信方案、担保、写作与质检规则
 ├── scripts/                  # 材料、Word、Excel 审计脚本
-└── assets/                   # 使用者本地放置的私有模板和测算表（不入库）
+└── assets/                   # 已确认的标准空白模板；测算表由使用者本地提供
 scripts/
 └── generate_credit_report_template.py
 ```
@@ -37,7 +37,20 @@ cp -R skill/corporate-credit-investigation-cn ~/.codex/skills/
 
 重新启动或刷新 Codex 后，可以通过 `$corporate-credit-investigation-cn` 显式调用。
 
-## 生成标准 Word 模板
+## 模板来源
+
+正式报告只使用 Skill 内两份经确认的标准模板：
+
+```text
+skill/corporate-credit-investigation-cn/assets/单一客户授信调查报告模版.docx
+skill/corporate-credit-investigation-cn/assets/低风险报告模版.docx
+```
+
+一般单一客户报告使用第一份，低风险／无风险报告使用第二份。两份模板只读复制后另存项目文件，不得混用、覆盖或用生成脚本替代。
+
+仓库根目录同时保留两份同名模板，便于人工查看和替换；提交前应核对根目录文件与`skill/corporate-credit-investigation-cn/assets/`运行资产的哈希一致，防止出现两套版本。
+
+## 模板生成工具（非正式模板来源）
 
 安装依赖：
 
@@ -45,7 +58,7 @@ cp -R skill/corporate-credit-investigation-cn ~/.codex/skills/
 python -m pip install -r requirements.txt
 ```
 
-生成模板时由使用者自行指定本地输出文件：
+下列脚本仅用于技术测试或生成通用空白文档，不作为正式授信报告模板来源：
 
 ```bash
 python scripts/generate_credit_report_template.py --output <local-docx-path>
@@ -55,15 +68,7 @@ python scripts/generate_credit_report_template.py --output <local-docx-path>
 
 ## 私有材料与流贷测算表
 
-本仓库不包含机构内部 Word 模板、客户审计报告、征信、身份证、工商账户信息、已填财务底稿或其他业务数据。
-
-如使用机构内部正式 Word 模板，应在获得授权后仅放入本地：
-
-```text
-skill/corporate-credit-investigation-cn/assets/授信报告模版-skill.docx
-```
-
-该文件作为本地默认授信报告模板使用，不再沿用旧2018版模板，并继续受`.gitignore`保护，不提交到公开仓库。
+本仓库仅包含上述两份经确认的空白标准模板，不包含客户审计报告、征信、身份证、工商账户信息、已填财务底稿或其他业务数据。
 
 流动资金测算工作簿的样例文件可能含实际数值，因此未提交。使用者应将内部批准使用的工作簿放在：
 
