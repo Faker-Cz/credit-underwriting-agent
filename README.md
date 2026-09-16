@@ -10,7 +10,7 @@ skill/corporate-credit-investigation-cn/
 ├── agents/openai.yaml        # Codex Agent 展示及默认调用配置
 ├── references/               # 财务、授信方案、担保、写作与质检规则
 ├── scripts/                  # 材料、Word、Excel 审计脚本
-└── assets/                   # 已确认的标准空白模板；测算表由使用者本地提供
+└── assets/                   # 已确认的标准空白Word模板及无客户数据的流贷测算模板
 scripts/
 └── generate_credit_report_template.py
 ```
