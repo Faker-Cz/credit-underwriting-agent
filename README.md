@@ -39,7 +39,7 @@ cp -R skill/corporate-credit-investigation-cn ~/.codex/skills/
 
 ## 模板来源
 
-正式报告只使用 Skill 内两份经确认的标准模板：
+正式报告只使用 Skill 内两份经确认的标准 Word 模板：
 
 ```text
 skill/corporate-credit-investigation-cn/assets/单一客户授信调查报告模版.docx
@@ -68,15 +68,18 @@ python scripts/generate_credit_report_template.py --output <local-docx-path>
 
 ## 私有材料与流贷测算表
 
-本仓库仅包含上述两份经确认的空白标准模板，不包含客户审计报告、征信、身份证、工商账户信息、已填财务底稿或其他业务数据。
+本仓库包含上述两份空白 Word 标准模板和一份无客户数据的流动资金测算清洁模板，不包含客户审计报告、征信、身份证、工商账户信息、已填财务底稿或其他业务数据。
 
-流动资金测算工作簿的样例文件可能含实际数值，因此未提交。使用者应将内部批准使用的工作簿放在：
+空白流动资金测算模板放在：
 
 ```text
 skill/corporate-credit-investigation-cn/assets/流动资金类贷款授信额度测算表.xlsx
 ```
 
-不得向公开仓库提交任何客户数据或访问凭据。
+该模板为单工作表清洁版，包含调节（保险）系数、特定需求1/2及最终新增额度公式；空白输入时不显示除零错误。项目已有用户手工更新版时，项目文件优先，不用此通用模板覆盖。
+仓库根目录同时保留同名工作簿便于人工查看；提交前须与`assets/`运行资产核对哈希一致。
+
+不得向公开仓库提交任何已填客户数据、客户材料或访问凭据。
 
 ## 财务分析实现说明
 

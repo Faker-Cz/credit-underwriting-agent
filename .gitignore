@@ -19,8 +19,10 @@ tmp/
 *.bak
 *.tmp
 
-# 含样例客户财务数据，须由使用者在本地私下提供
+# Excel默认可能含客户财务数据，不入公开仓库；
+# 仅白名单中的无客户数据流贷测算清洁模板可提交。
 skill/corporate-credit-investigation-cn/assets/*.xlsx
+!skill/corporate-credit-investigation-cn/assets/流动资金类贷款授信额度测算表.xlsx
 
 # 机构内部或本地生成的其他 Word 文件不向公开仓库分发；
 # 下列两份经用户确认的空白标准模板作为 Skill 资产入库。
