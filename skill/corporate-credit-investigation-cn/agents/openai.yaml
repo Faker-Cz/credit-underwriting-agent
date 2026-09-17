@@ -1,7 +1,7 @@
 interface:
   display_name: "对公授信调查报告助手"
   short_description: "以客户经理口吻编制授信报告并调度财务分析复核"
-  default_prompt: "Use $corporate-credit-investigation-cn to write every Chinese corporate credit report in an experienced relationship-manager voice, identify the report mode before choosing analysis depth, complete an independent second-pass financial review, use a subagent only when the environment and user instructions permit it, and reconcile every linked field."
+  default_prompt: "Use $corporate-credit-investigation-cn for this internal Chinese corporate credit project. Write from the relationship-manager perspective and organize every project around support for a reasonable credit structure, while making the final conclusion follow verified facts. Identify the report mode, keep an evidence ledger, complete an independent financial review, reconcile linked fields, and—unless the user forbids font changes—normalize body and table-body text to 仿宋_GB2312 12pt without changing other layout."
 
 policy:
   allow_implicit_invocation: true

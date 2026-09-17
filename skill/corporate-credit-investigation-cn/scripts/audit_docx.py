@@ -10,9 +10,46 @@ from docx import Document
 from docx.oxml.ns import qn
 
 
-PLACEHOLDERS = ("【待补充", "【待核验", "粘贴处", "XXX", "待定")
+PLACEHOLDER_PATTERNS = {
+    "待补充标记": r"【\s*(?:待补充|待核验|填写|金额|期限|业务品种|受信客户全称)[^】]*】",
+    "英文占位符": r"(?i)(?<![A-Za-z])x{2,}(?![A-Za-z])",
+    "粘贴说明": r"粘贴处|粘贴在这|待定",
+}
 VAGUE_PHRASES = ("以实际为准", "以最终为准", "有望", "具备一定", "需持续关注", "待核验")
+TEMPLATE_RISK_PATTERNS = {
+    "手机号": r"(?<!\d)1[3-9]\d{9}(?!\d)",
+    "身份证号": r"(?<!\d)\d{17}[0-9Xx](?!\d)",
+    "统一社会信用代码": r"(?<![0-9A-Z])[0-9A-HJ-NPQRTUWXY]{18}(?![0-9A-Z])",
+    "固定年度": r"(?<!\d)(?:19|20)\d{2}年",
+    "已勾选复选框": r"[☑☒■]",
+    "预填判断": r"无异常|经营、财务状况[^。；]*良好|确认贸易背景真实|最新主体评级\s*[：:]\s*[A-D][0-9]",
+    "填写说明": r"这里要|需要按照[^。；\n]{0,80}(?:添加|粘贴)",
+}
 WORD_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+STORY_PART = re.compile(r"^word/(?:document|header\d+|footer\d+|footnotes|endnotes|comments)\.xml$")
+
+
+def xml_story_text(path):
+    """读取正文、页眉页脚、脚注和批注，避免遗漏旧客户信息。"""
+    chunks = []
+    with ZipFile(path) as archive:
+        for name in sorted(archive.namelist()):
+            if not STORY_PART.match(name):
+                continue
+            try:
+                root = ElementTree.fromstring(archive.read(name))
+            except ElementTree.ParseError:
+                continue
+            chunks.append(f"[{name}]\n" + "".join(node.text or "" for node in root.iter(f"{{{WORD_NAMESPACE}}}t")))
+    return "\n".join(chunks)
+
+
+def regex_hits(patterns, text):
+    return {
+        label: len(re.findall(pattern, text, flags=re.IGNORECASE))
+        for label, pattern in patterns.items()
+        if re.search(pattern, text, flags=re.IGNORECASE)
+    }
 
 
 def package_stats(path):
@@ -26,27 +63,21 @@ def package_stats(path):
         comment_ids = []
         if "word/comments.xml" in names:
             root = ElementTree.fromstring(archive.read("word/comments.xml"))
-            comment_nodes = root.findall(f".//{{{WORD_NAMESPACE}}}comment")
-            comments = len(comment_nodes)
-            comment_ids = [node.get(f"{{{WORD_NAMESPACE}}}id") for node in comment_nodes]
-
-        comment_anchors = 0
-        comment_anchor_ids = []
-        comment_end_ids = []
+            nodes = root.findall(f".//{{{WORD_NAMESPACE}}}comment")
+            comments = len(nodes)
+            comment_ids = [node.get(f"{{{WORD_NAMESPACE}}}id") for node in nodes]
+        anchors = []
+        ends = []
         if "word/document.xml" in names:
             root = ElementTree.fromstring(archive.read("word/document.xml"))
-            anchor_nodes = root.findall(f".//{{{WORD_NAMESPACE}}}commentRangeStart")
-            end_nodes = root.findall(f".//{{{WORD_NAMESPACE}}}commentRangeEnd")
-            comment_anchors = len(anchor_nodes)
-            comment_anchor_ids = [node.get(f"{{{WORD_NAMESPACE}}}id") for node in anchor_nodes]
-            comment_end_ids = [node.get(f"{{{WORD_NAMESPACE}}}id") for node in end_nodes]
-
+            anchors = [node.get(f"{{{WORD_NAMESPACE}}}id") for node in root.findall(f".//{{{WORD_NAMESPACE}}}commentRangeStart")]
+            ends = [node.get(f"{{{WORD_NAMESPACE}}}id") for node in root.findall(f".//{{{WORD_NAMESPACE}}}commentRangeEnd")]
         return {
             "comments": comments,
-            "comment_anchors": comment_anchors,
+            "comment_anchors": len(anchors),
             "comment_ids": comment_ids,
-            "comment_anchor_ids": comment_anchor_ids,
-            "comment_end_ids": comment_end_ids,
+            "comment_anchor_ids": anchors,
+            "comment_end_ids": ends,
             "headers": count_parts("word/header"),
             "footers": count_parts("word/footer"),
             "media_files": count_parts("word/media/"),
@@ -66,55 +97,36 @@ def all_paragraphs(document):
 
 
 def run_format_stats(document):
-    fonts = Counter()
-    sizes = Counter()
-    bold = Counter()
+    fonts, sizes, bold = Counter(), Counter(), Counter()
     text_runs = 0
     for paragraph in all_paragraphs(document):
         for run in paragraph.runs:
             if not run.text.strip():
                 continue
             text_runs += 1
-            properties = run._r.rPr
-            font_values = []
-            if properties is not None and properties.rFonts is not None:
-                for key in ("ascii", "hAnsi", "eastAsia", "cs"):
-                    font_values.append(properties.rFonts.get(qn(f"w:{key}")) or "继承")
-            else:
-                font_values = ["继承"] * 4
-            fonts["|".join(font_values)] += 1
+            props = run._r.rPr
+            mappings = [props.rFonts.get(qn(f"w:{key}")) or "继承" for key in ("ascii", "hAnsi", "eastAsia", "cs")] if props is not None and props.rFonts is not None else ["继承"] * 4
+            fonts["|".join(mappings)] += 1
             sizes[str(run.font.size.pt if run.font.size else "继承")] += 1
             bold[str(run.bold if run.bold is not None else "继承")] += 1
-    return {
-        "text_runs": text_runs,
-        "font_mappings": dict(fonts.most_common()),
-        "font_sizes_pt": dict(sizes.most_common()),
-        "bold_values": dict(bold.most_common()),
-        "note": "字体统计用于定位异常运行；标题、正文和特殊对象是否适用统一字体仍须结合模板判断。",
-    }
+    return {"text_runs": text_runs, "font_mappings": dict(fonts.most_common()), "font_sizes_pt": dict(sizes.most_common()), "bold_values": dict(bold.most_common())}
 
 
-def dominant_key(counter_dict):
-    if not counter_dict:
-        return None
-    return max(counter_dict, key=counter_dict.get)
+def dominant_key(values):
+    return max(values, key=values.get) if values else None
 
 
 def document_stats(document):
-    paragraphs = [paragraph.text for paragraph in document.paragraphs]
-    cells = [cell.text for table in document.tables for row in table.rows for cell in row.cells]
-    return {
-        "paragraphs": len(document.paragraphs),
-        "tables": len(document.tables),
-        "images": len(document.inline_shapes),
-        "sections": len(document.sections),
-        "characters": len("\n".join(paragraphs + cells)),
-    }
+    paragraphs = [p.text for p in document.paragraphs]
+    cells = [c.text for t in document.tables for r in t.rows for c in r.cells]
+    return {"paragraphs": len(document.paragraphs), "tables": len(document.tables), "images": len(document.inline_shapes), "sections": len(document.sections), "characters": len("\n".join(paragraphs + cells))}
 
 
 def main():
-    parser = argparse.ArgumentParser(description="检查授信报告DOCX的残留客户、占位符和分页结构。")
+    parser = argparse.ArgumentParser(description="检查授信报告DOCX的客户残留、占位符、预填结论和分页结构。")
     parser.add_argument("document")
+    parser.add_argument("--mode", choices=("report", "template"), default="report")
+    parser.add_argument("--strict", action="store_true", help="发现问题或结构警告时返回非零状态。")
     parser.add_argument("--baseline", help="用户修改基准版，用于检测内容或对象数量异常减少。")
     parser.add_argument("--forbidden", action="append", default=[])
     parser.add_argument("--output")
@@ -122,22 +134,20 @@ def main():
 
     path = Path(args.document)
     document = Document(path)
-    paragraphs = [paragraph.text for paragraph in document.paragraphs]
-    cells = [cell.text for table in document.tables for row in table.rows for cell in row.cells]
-    full_text = "\n".join(paragraphs + cells)
-    leftovers = {word: full_text.count(word) for word in args.forbidden if word and word in full_text}
-    placeholders = {word: full_text.count(word) for word in PLACEHOLDERS if word in full_text}
-    vague_phrases = {word: full_text.count(word) for word in VAGUE_PHRASES if word in full_text}
-    empty_heading_like = []
+    paragraphs = [p.text for p in document.paragraphs]
+    full_text = xml_story_text(path)
+    normalized_text = re.sub(r"\s+", "", full_text)
+    leftovers = {}
+    for word in args.forbidden:
+        normalized_word = re.sub(r"\s+", "", word)
+        if normalized_word and normalized_word in normalized_text:
+            leftovers[word] = normalized_text.count(normalized_word)
+    placeholders = regex_hits(PLACEHOLDER_PATTERNS, full_text)
+    template_risks = regex_hits(TEMPLATE_RISK_PATTERNS, full_text) if args.mode == "template" else {}
+    vague = {word: full_text.count(word) for word in VAGUE_PHRASES if word in full_text}
+    empty_headings = [{"paragraph": i, "text": value.strip()} for i, value in enumerate(paragraphs) if re.fullmatch(r"[（(]?[一二三四五六七八九十0-9]+[）).、]", value.strip())]
 
-    for index, text in enumerate(paragraphs):
-        stripped = text.strip()
-        if re.fullmatch(r"[（(]?[一二三四五六七八九十0-9]+[）).、]", stripped):
-            empty_heading_like.append({"paragraph": index, "text": stripped})
-
-    page_break_before = []
-    keep_next = []
-    keep_lines = []
+    page_break_before, keep_next, keep_lines = [], [], []
     explicit_breaks = 0
     for index, paragraph in enumerate(document.paragraphs):
         if paragraph.paragraph_format.page_break_before:
@@ -148,90 +158,62 @@ def main():
             keep_lines.append(index)
         explicit_breaks += len(paragraph._p.xpath('.//w:br[@w:type="page"]'))
 
-    cant_split_rows = 0
-    fixed_height_rows = 0
+    cant_split_rows = fixed_height_rows = 0
     for table in document.tables:
         for row in table.rows:
-            properties = row._tr.find(qn("w:trPr"))
-            if properties is not None and properties.find(qn("w:cantSplit")) is not None:
+            props = row._tr.find(qn("w:trPr"))
+            if props is not None and props.find(qn("w:cantSplit")) is not None:
                 cant_split_rows += 1
-            if properties is not None and properties.find(qn("w:trHeight")) is not None:
+            if props is not None and props.find(qn("w:trHeight")) is not None:
                 fixed_height_rows += 1
 
+    issues = []
+    if leftovers:
+        issues.append(f"存在{sum(leftovers.values())}处禁用文本")
+    if args.mode == "report" and placeholders:
+        issues.append(f"正式报告存在{sum(placeholders.values())}处占位或填写说明")
+    if args.mode == "template" and template_risks:
+        issues.append(f"模板存在{sum(template_risks.values())}处敏感信息、固定时点或预填判断")
+
     report = {
-        "document": str(path),
-        "stats": document_stats(document),
-        "package_stats": package_stats(path),
-        "run_format_stats": run_format_stats(document),
-        "explicit_page_breaks": explicit_breaks,
-        "page_break_before_paragraphs": page_break_before,
-        "keep_with_next_paragraphs": keep_next,
-        "keep_together_paragraphs": keep_lines,
-        "cant_split_table_rows": cant_split_rows,
-        "fixed_height_table_rows": fixed_height_rows,
-        "forbidden_leftovers": leftovers,
-        "placeholders": placeholders,
-        "vague_phrases": vague_phrases,
-        "empty_heading_like": empty_heading_like,
-        "warnings": [],
-        "note": "结构检查不能替代逐页渲染检查。",
+        "document": str(path), "mode": args.mode, "stats": document_stats(document),
+        "package_stats": package_stats(path), "run_format_stats": run_format_stats(document),
+        "explicit_page_breaks": explicit_breaks, "page_break_before_paragraphs": page_break_before,
+        "keep_with_next_paragraphs": keep_next, "keep_together_paragraphs": keep_lines,
+        "cant_split_table_rows": cant_split_rows, "fixed_height_table_rows": fixed_height_rows,
+        "forbidden_leftovers": leftovers, "placeholders": placeholders, "template_risks": template_risks,
+        "vague_phrases": vague, "empty_heading_like": empty_headings, "issues": issues, "warnings": [],
+        "note": "结构检查不能替代逐页渲染。模板模式允许明确占位符，但不允许真实个人/机构信息、固定报告期、已勾选选项或预填结论。",
     }
 
     if args.baseline:
         baseline_path = Path(args.baseline)
         baseline = Document(baseline_path)
         baseline_stats = document_stats(baseline)
-        baseline_package_stats = package_stats(baseline_path)
-        baseline_run_format_stats = run_format_stats(baseline)
-        report["baseline"] = str(baseline_path)
-        report["baseline_stats"] = baseline_stats
-        report["baseline_package_stats"] = baseline_package_stats
-        report["baseline_run_format_stats"] = baseline_run_format_stats
+        baseline_package = package_stats(baseline_path)
+        baseline_formats = run_format_stats(baseline)
+        report.update({"baseline": str(baseline_path), "baseline_stats": baseline_stats, "baseline_package_stats": baseline_package, "baseline_run_format_stats": baseline_formats})
         for key in ("paragraphs", "tables", "images", "sections", "characters"):
-            current_value = report["stats"][key]
-            baseline_value = baseline_stats[key]
-            if current_value < baseline_value:
-                report["warnings"].append(f"{key}由{baseline_value}减少为{current_value}，请确认未误删内容")
+            if report["stats"][key] < baseline_stats[key]:
+                report["warnings"].append(f"{key}由{baseline_stats[key]}减少为{report['stats'][key]}，请确认未误删内容")
         for key in ("comments", "comment_anchors", "headers", "footers", "media_files", "embedded_objects"):
-            current_value = report["package_stats"][key]
-            baseline_value = baseline_package_stats[key]
-            if current_value < baseline_value:
-                report["warnings"].append(f"{key}由{baseline_value}减少为{current_value}，请确认批注或文档对象未丢失")
+            if report["package_stats"][key] < baseline_package[key]:
+                report["warnings"].append(f"{key}由{baseline_package[key]}减少为{report['package_stats'][key]}，请确认对象未丢失")
         for key in ("comment_ids", "comment_anchor_ids", "comment_end_ids"):
-            current_ids = report["package_stats"][key]
-            baseline_ids = baseline_package_stats[key]
-            missing_ids = [item for item in baseline_ids if item not in current_ids]
-            if missing_ids:
-                report["warnings"].append(
-                    f"{key}缺少基准ID: {', '.join(missing_ids)}，请确认原批注及锚点未被删除或重建"
-                )
-            elif current_ids != baseline_ids:
+            missing = [item for item in baseline_package[key] if item not in report["package_stats"][key]]
+            if missing:
+                report["warnings"].append(f"{key}缺少基准ID: {', '.join(missing)}")
+            elif report["package_stats"][key] != baseline_package[key]:
                 report["warnings"].append(f"{key}顺序发生变化，请逐条核对批注锚点")
-        for key, label in (
-            ("font_mappings", "主字体映射"),
-            ("font_sizes_pt", "主字号"),
-            ("bold_values", "主要字重"),
-        ):
-            baseline_dominant = dominant_key(baseline_run_format_stats[key])
-            current_dominant = dominant_key(report["run_format_stats"][key])
-            if baseline_dominant != current_dominant:
-                report["warnings"].append(
-                    f"{label}由{baseline_dominant}变为{current_dominant}，请确认未发生全局格式漂移"
-                )
+        for key, label in (("font_mappings", "主字体映射"), ("font_sizes_pt", "主字号"), ("bold_values", "主要字重")):
+            if dominant_key(baseline_formats[key]) != dominant_key(report["run_format_stats"][key]):
+                report["warnings"].append(f"{label}发生变化，请确认未发生全局格式漂移")
 
     output = Path(args.output) if args.output else path.with_suffix(".文档核验.json")
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(
-        json.dumps(
-            {
-                "output": str(output),
-                "forbidden_leftovers": leftovers,
-                "placeholders": placeholders,
-                "warnings": report["warnings"],
-            },
-            ensure_ascii=False,
-        )
-    )
+    print(json.dumps({"output": str(output), "issues": issues, "warnings": report["warnings"]}, ensure_ascii=False))
+    if args.strict and (issues or report["warnings"]):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
