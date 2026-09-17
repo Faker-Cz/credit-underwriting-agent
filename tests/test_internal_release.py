@@ -99,6 +99,7 @@ class InternalReleaseTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("--baseline", readme)
         self.assertIn("--pure-values", readme)
+        self.assertLess(len(readme.splitlines()), 80)
 
 
 if __name__ == "__main__":
