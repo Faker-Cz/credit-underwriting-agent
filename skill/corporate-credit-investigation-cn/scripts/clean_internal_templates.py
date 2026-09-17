@@ -32,13 +32,22 @@ REPLACEMENTS = [
     (r"流动资金类贷款授信额度测算表需要按照新公司数据添加然后粘贴在这", "【如适用，在此插入项目专用测算结果；不适用填“无”】"),
     (r"受信客户最新主体评级\s*[：:]\s*A3", "受信客户最新主体评级：【根据系统评级填写】"),
     (r"授信资金用途用于企业日常经营周转。经调查，xxx公司的企业经营、财务状况、产品和市场情况良好，确认贸易背景真实、合规。", "【根据正式授信方案、贸易背景材料及调查结果填写资金用途和真实性分析】"),
-    (r"授信方案有效期为1年，额度项下品种为低风险业务，单笔业务期限为1年，授信缓释方式为低风险业务。", "授信方案有效期【期限】，业务品种为【业务品种】，单笔业务期限【单笔期限】，授信缓释方式为【低风险缓释安排】。"),
+    (r"拟同意给予【受信客户全称】（次）低风险授信额度【金额】亿元，授信方案有效期1年，业务品种为流动性支持类、担保承诺类等产品，单笔业务期限按办法规定执行且不超过1年，授信由本行认可的一、二类合格缓释物有效缓释（含资产池入池缓释物）。", "【待补充：根据正式低风险授信方案和调查事实填写授信结论】"),
+    (r"授信方案有效期为1年，额度项下品种为低风险业务，单笔业务期限为1年，授信缓释方式为低风险业务。", "【待补充：根据正式低风险授信方案和调查事实填写授信结论】"),
     (r"拟同意给予xxx（次）低风险授信额度xxx亿元", "拟同意给予【受信客户全称】（次）低风险授信额度【金额】亿元"),
     (r"无异常", "【根据查询结果填写】"),
     (r"债券1", "【融资品种】"),
     (r"(?i)(?<![A-Za-z])x{2,}(?![A-Za-z])", "【填写】"),
     (r"[☑☒■]", "□"),
 ]
+
+
+SINGLE_CUSTOMER_TABLE_CORRECTIONS = {
+    (12, 0, 0): ("保证人间接融资情况", "受信客户间接融资情况"),
+    (12, 2, 0): ("保证人直接融资情况", "受信客户直接融资情况"),
+    (21, 8, 0): ("受信客户融资评价", "保证人融资评价"),
+    (21, 9, 0): ("受信客户融资变动原因分析", "保证人融资变动原因分析"),
+}
 
 
 def replace_in_paragraph(paragraph, pattern, replacement):
@@ -70,12 +79,51 @@ def replace_in_paragraph(paragraph, pattern, replacement):
     return len(matches)
 
 
-def clean_xml(data):
+def paragraph_text(element):
+    return "".join(node.text or "" for node in element.iter(f"{{{W}}}t"))
+
+
+def replace_exact_in_element(element, expected, replacement):
+    paragraphs = list(element.iter(f"{{{W}}}p"))
+    changes = 0
+    for paragraph in paragraphs:
+        if paragraph_text(paragraph).strip() == expected:
+            changes += replace_in_paragraph(paragraph, re.escape(expected), replacement)
+    return changes
+
+
+def apply_document_corrections(root):
+    changes = 0
+    body = root.find(f"{{{W}}}body")
+    tables = list(body.findall(f"{{{W}}}tbl")) if body is not None else []
+    for (table_index, row_index, cell_index), (expected, replacement) in SINGLE_CUSTOMER_TABLE_CORRECTIONS.items():
+        if table_index >= len(tables):
+            continue
+        rows = list(tables[table_index].findall(f"{{{W}}}tr"))
+        if row_index >= len(rows):
+            continue
+        cells = list(rows[row_index].findall(f"{{{W}}}tc"))
+        if cell_index < len(cells):
+            changes += replace_exact_in_element(cells[cell_index], expected, replacement)
+
+    for paragraph in list(root.iter(f"{{{W}}}p")):
+        if paragraph_text(paragraph).strip() != "。":
+            continue
+        parent = next((node for node in root.iter() if paragraph in list(node)), None)
+        if parent is not None:
+            parent.remove(paragraph)
+            changes += 1
+    return changes
+
+
+def clean_xml(data, document_part=False):
     root = ElementTree.fromstring(data)
     changes = 0
     for paragraph in root.iter(f"{{{W}}}p"):
         for pattern, replacement in REPLACEMENTS:
             changes += replace_in_paragraph(paragraph, pattern, replacement)
+    if document_part:
+        changes += apply_document_corrections(root)
     return ElementTree.tostring(root, encoding="utf-8", xml_declaration=True), changes
 
 
@@ -103,7 +151,7 @@ def clean_document(path):
             for item in source.infolist():
                 data = source.read(item.filename)
                 if STORY_PART.match(item.filename):
-                    data, count = clean_xml(data)
+                    data, count = clean_xml(data, document_part=item.filename == "word/document.xml")
                     changes += count
                 elif item.filename == "docProps/core.xml":
                     data = clean_core_properties(data)

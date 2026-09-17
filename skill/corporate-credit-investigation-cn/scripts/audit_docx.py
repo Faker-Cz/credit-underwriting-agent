@@ -22,8 +22,12 @@ TEMPLATE_RISK_PATTERNS = {
     "统一社会信用代码": r"(?<![0-9A-Z])[0-9A-HJ-NPQRTUWXY]{18}(?![0-9A-Z])",
     "固定年度": r"(?<!\d)(?:19|20)\d{2}年",
     "已勾选复选框": r"[☑☒■]",
-    "预填判断": r"无异常|经营、财务状况[^。；]*良好|确认贸易背景真实|最新主体评级\s*[：:]\s*[A-D][0-9]",
+    "预填判断": r"无异常|经营、财务状况[^。；]*良好|确认贸易背景真实|最新主体评级\s*[：:]\s*[A-D][0-9]|拟同意给予[^。；\n]{0,120}低风险授信额度[^。；\n]{0,120}授信方案有效期",
     "填写说明": r"这里要|需要按照[^。；\n]{0,80}(?:添加|粘贴)",
+}
+REPORT_SENSITIVE_PATTERNS = {
+    key: TEMPLATE_RISK_PATTERNS[key]
+    for key in ("手机号", "身份证号", "统一社会信用代码")
 }
 WORD_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 STORY_PART = re.compile(r"^word/(?:document|header\d+|footer\d+|footnotes|endnotes|comments)\.xml$")
@@ -85,6 +89,82 @@ def package_stats(path):
         }
 
 
+def numbering_stats(path):
+    """列出自动编号段落及其编号定义，避免把不可见编号误当成普通文本。"""
+    with ZipFile(path) as archive:
+        names = set(archive.namelist())
+        if "word/document.xml" not in names or "word/numbering.xml" not in names:
+            return []
+        document_root = ElementTree.fromstring(archive.read("word/document.xml"))
+        numbering_root = ElementTree.fromstring(archive.read("word/numbering.xml"))
+
+    abstract_by_num = {}
+    for node in numbering_root.findall(f".//{{{WORD_NAMESPACE}}}num"):
+        num_id = node.get(f"{{{WORD_NAMESPACE}}}numId")
+        abstract = node.find(f"{{{WORD_NAMESPACE}}}abstractNumId")
+        if num_id is not None and abstract is not None:
+            abstract_by_num[num_id] = abstract.get(f"{{{WORD_NAMESPACE}}}val")
+
+    level_defs = {}
+    for abstract in numbering_root.findall(f".//{{{WORD_NAMESPACE}}}abstractNum"):
+        abstract_id = abstract.get(f"{{{WORD_NAMESPACE}}}abstractNumId")
+        for level in abstract.findall(f"{{{WORD_NAMESPACE}}}lvl"):
+            ilvl = level.get(f"{{{WORD_NAMESPACE}}}ilvl", "0")
+            values = {}
+            for tag in ("start", "numFmt", "lvlText"):
+                child = level.find(f"{{{WORD_NAMESPACE}}}{tag}")
+                values[tag] = child.get(f"{{{WORD_NAMESPACE}}}val") if child is not None else None
+            level_defs[(abstract_id, ilvl)] = values
+
+    numbered = []
+    for index, paragraph in enumerate(document_root.findall(f".//{{{WORD_NAMESPACE}}}p")):
+        num_pr = paragraph.find(f"./{{{WORD_NAMESPACE}}}pPr/{{{WORD_NAMESPACE}}}numPr")
+        if num_pr is None:
+            continue
+        num_id_node = num_pr.find(f"{{{WORD_NAMESPACE}}}numId")
+        ilvl_node = num_pr.find(f"{{{WORD_NAMESPACE}}}ilvl")
+        if num_id_node is None:
+            continue
+        num_id = num_id_node.get(f"{{{WORD_NAMESPACE}}}val")
+        ilvl = ilvl_node.get(f"{{{WORD_NAMESPACE}}}val") if ilvl_node is not None else "0"
+        abstract_id = abstract_by_num.get(num_id)
+        numbered.append({
+            "paragraph": index,
+            "text": paragraph_text(paragraph).strip(),
+            "num_id": num_id,
+            "level": ilvl,
+            "abstract_num_id": abstract_id,
+            **level_defs.get((abstract_id, ilvl), {}),
+        })
+    return numbered
+
+
+def paragraph_text(element):
+    return "".join(node.text or "" for node in element.iter(f"{{{WORD_NAMESPACE}}}t"))
+
+
+def template_semantic_issues(document):
+    issues = []
+    tables = document.tables
+    checks = {
+        (12, 0, 0): "保证人间接融资情况",
+        (12, 2, 0): "保证人直接融资情况",
+        (21, 8, 0): "受信客户融资评价",
+        (21, 9, 0): "受信客户融资变动原因分析",
+    }
+    for (table_index, row_index, cell_index), wrong_text in checks.items():
+        if table_index >= len(tables):
+            continue
+        table = tables[table_index]
+        if row_index >= len(table.rows) or cell_index >= len(table.rows[row_index].cells):
+            continue
+        if wrong_text in table.rows[row_index].cells[cell_index].text:
+            issues.append(f"表{table_index + 1}第{row_index + 1}行存在对象错置标题“{wrong_text}”")
+    if any(paragraph.text.strip() == "。" for paragraph in all_paragraphs(document)):
+        issues.append("模板存在孤立句号段落")
+    return issues
+
+
 def all_paragraphs(document):
     yield from document.paragraphs
     for table in document.tables:
@@ -129,6 +209,7 @@ def main():
     parser.add_argument("--strict", action="store_true", help="发现问题或结构警告时返回非零状态。")
     parser.add_argument("--baseline", help="用户修改基准版，用于检测内容或对象数量异常减少。")
     parser.add_argument("--forbidden", action="append", default=[])
+    parser.add_argument("--forbidden-file", action="append", default=[], help="每行一个历史客户名、机构名或其他禁用文本；空行和#注释忽略。")
     parser.add_argument("--output")
     args = parser.parse_args()
 
@@ -137,13 +218,23 @@ def main():
     paragraphs = [p.text for p in document.paragraphs]
     full_text = xml_story_text(path)
     normalized_text = re.sub(r"\s+", "", full_text)
+    forbidden_words = list(args.forbidden)
+    for forbidden_file in args.forbidden_file:
+        forbidden_path = Path(forbidden_file)
+        if not forbidden_path.is_file():
+            parser.error(f"禁用词文件不存在：{forbidden_path}")
+        forbidden_words.extend(
+            line.strip() for line in forbidden_path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
     leftovers = {}
-    for word in args.forbidden:
+    for word in dict.fromkeys(forbidden_words):
         normalized_word = re.sub(r"\s+", "", word)
         if normalized_word and normalized_word in normalized_text:
             leftovers[word] = normalized_text.count(normalized_word)
     placeholders = regex_hits(PLACEHOLDER_PATTERNS, full_text)
     template_risks = regex_hits(TEMPLATE_RISK_PATTERNS, full_text) if args.mode == "template" else {}
+    sensitive_data = regex_hits(REPORT_SENSITIVE_PATTERNS, full_text) if args.mode == "report" else {}
     vague = {word: full_text.count(word) for word in VAGUE_PHRASES if word in full_text}
     empty_headings = [{"paragraph": i, "text": value.strip()} for i, value in enumerate(paragraphs) if re.fullmatch(r"[（(]?[一二三四五六七八九十0-9]+[）).、]", value.strip())]
 
@@ -174,6 +265,8 @@ def main():
         issues.append(f"正式报告存在{sum(placeholders.values())}处占位或填写说明")
     if args.mode == "template" and template_risks:
         issues.append(f"模板存在{sum(template_risks.values())}处敏感信息、固定时点或预填判断")
+    if args.mode == "template":
+        issues.extend(template_semantic_issues(document))
 
     report = {
         "document": str(path), "mode": args.mode, "stats": document_stats(document),
@@ -182,8 +275,9 @@ def main():
         "keep_with_next_paragraphs": keep_next, "keep_together_paragraphs": keep_lines,
         "cant_split_table_rows": cant_split_rows, "fixed_height_table_rows": fixed_height_rows,
         "forbidden_leftovers": leftovers, "placeholders": placeholders, "template_risks": template_risks,
+        "sensitive_data_hits": sensitive_data, "automatic_numbering": numbering_stats(path),
         "vague_phrases": vague, "empty_heading_like": empty_headings, "issues": issues, "warnings": [],
-        "note": "结构检查不能替代逐页渲染。模板模式允许明确占位符，但不允许真实个人/机构信息、固定报告期、已勾选选项或预填结论。",
+        "note": "结构检查不能替代逐页渲染。automatic_numbering记录Word自动编号定义，普通文本提取不含渲染后的编号。模板模式允许明确占位符，但不允许真实个人/机构信息、固定报告期、已勾选选项或预填结论。",
     }
 
     if args.baseline:

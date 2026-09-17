@@ -31,6 +31,7 @@ def main():
     for row in sheet["C4:E11"]:
         for cell in row:
             cell.protection = Protection(locked=False)
+    sheet["E12"].protection = Protection(locked=False)
     for row in sheet["E13:E19"]:
         for cell in row:
             cell.protection = Protection(locked=False)
@@ -47,7 +48,7 @@ def main():
         rule.add(sheet["E17"])
 
     sheet.protection.sheet = True
-    sheet.protection.selectLockedCells = True
+    sheet.protection.selectLockedCells = False
     sheet.protection.selectUnlockedCells = False
     if workbook.calculation is None:
         workbook.calculation = CalcProperties(calcMode="auto")

@@ -33,13 +33,16 @@ scripts/
 
 ## 安装 Skill
 
-将 Skill 目录复制到个人 Codex Skills 目录：
+仓库中的`corporate-credit-investigation-cn`是唯一现行版本。首次安装或从旧名升级时，先移走旧版`bank-corporate-credit-investigation-cn`，再复制现行目录，避免两套近似规则同时被自动发现：
 
 ```bash
-cp -R skill/corporate-credit-investigation-cn ~/.codex/skills/
+mkdir -p ~/.codex/skill-backups
+if [ -d ~/.codex/skills/bank-corporate-credit-investigation-cn ]; then mv ~/.codex/skills/bank-corporate-credit-investigation-cn ~/.codex/skill-backups/; fi
+mkdir -p ~/.codex/skills/corporate-credit-investigation-cn
+rsync -a --delete skill/corporate-credit-investigation-cn/ ~/.codex/skills/corporate-credit-investigation-cn/
 ```
 
-重新启动或刷新 Codex 后，可以通过 `$corporate-credit-investigation-cn` 显式调用。
+旧版被移到Skills扫描目录之外的可恢复备份区，避免新旧规则同时生效。重新启动或刷新 Codex 后，可以通过`$corporate-credit-investigation-cn`显式调用。安装后应核对`~/.codex/skills/corporate-credit-investigation-cn/SKILL.md`与仓库版本一致；本仓库当前只承诺Codex内部使用，不把其他客户端兼容性作为发布条件。
 
 ## 模板来源
 
@@ -97,8 +100,16 @@ skill/corporate-credit-investigation-cn/assets/流动资金类贷款授信额度
 
 ```bash
 python3 skill/corporate-credit-investigation-cn/scripts/inventory_materials.py <project-dir> --output <inventory.json>
-python3 skill/corporate-credit-investigation-cn/scripts/audit_docx.py <report.docx> --mode report --strict
+python3 skill/corporate-credit-investigation-cn/scripts/audit_docx.py <report.docx> --mode report --strict --baseline <用户最新版基准.docx> --forbidden-file <项目禁用词.txt>
 python3 skill/corporate-credit-investigation-cn/scripts/audit_financial_workbook.py <workbook.xlsx> --strict
+```
+
+`项目禁用词.txt`每行写一个不得出现在本项目成稿中的历史客户名、机构名或其他残留词，可用`#`开头写注释。报告必须以用户指定最新版作为`--baseline`；这是检测段落、表格、图片、批注锚点、页眉页脚和主格式异常减少的自动保障。正式报告中的手机号、身份证号和统一社会信用代码会记录在审计JSON中供人工核对，但内部报告可能依法需要这些字段，因此不会仅因出现而自动判错。
+
+只有用户明确要求“纯数值工作簿、不得保留公式”时，才追加：
+
+```bash
+python3 skill/corporate-credit-investigation-cn/scripts/audit_financial_workbook.py <workbook.xlsx> --strict --pure-values
 ```
 
 维护仓库内清洁模板时执行更严格的模板检查：
@@ -107,6 +118,14 @@ python3 skill/corporate-credit-investigation-cn/scripts/audit_financial_workbook
 python3 skill/corporate-credit-investigation-cn/scripts/audit_docx.py <template.docx> --mode template --strict --forbidden <机构或历史客户名>
 python3 skill/corporate-credit-investigation-cn/scripts/audit_financial_workbook.py <流贷模板.xlsx> --mode loan-template --strict
 ```
+
+## 模板维护与可复现性
+
+- Word模板由`clean_internal_templates.py`做OOXML定点清理；脚本应幂等，第二次运行必须为0处替换。
+- Word自动编号不会出现在普通文本提取结果中，`audit_docx.py`会把编号定义写入`automatic_numbering`供复核。单一客户模板第二部分目前保留机构模板原有的顶层“三”后接“六”；在取得机构模板确认前，不由智能体自行重编号。
+- 流贷测算模板先由`update_internal_workbook.mjs`在Codex工作区依赖提供的`@oai/artifact-tool`环境中更新，再由`finalize_internal_workbook.py`补齐保护、校验和打印设置。仓库不单独安装或锁定该内部运行时依赖。
+- 修改Skill后运行`python3 ${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-creator/scripts/quick_validate.py skill/corporate-credit-investigation-cn`，再执行仓库回归测试；所需Python依赖由`requirements.txt`统一声明。
+- 根目录与`assets/`中的三份模板是同一发布资产的两份副本，提交前必须通过哈希一致性测试。
 
 ## 财务分析实现说明
 

@@ -78,11 +78,15 @@ def audit_loan_template(sheet, report):
         for column in range(3, 6):
             if sheet.cell(row, column).protection.locked:
                 report["issues"].append(f"{sheet.title}!{sheet.cell(row, column).coordinate}: 黄色输入区应解锁")
+    if sheet["E12"].protection.locked:
+        report["issues"].append(f"{sheet.title}!E12: 黄色输入区应解锁")
     for row in range(13, 20):
         if sheet.cell(row, 5).protection.locked:
             report["issues"].append(f"{sheet.title}!E{row}: 黄色输入区应解锁")
     if not sheet.protection.sheet:
         report["issues"].append(f"{sheet.title}: 工作表保护未启用，锁定公式不能生效")
+    if sheet.protection.selectLockedCells:
+        report["issues"].append(f"{sheet.title}: 受保护状态下应允许复核人选择锁定单元格查看公式")
     if "A1:H23" not in str(sheet.print_area).replace("$", ""):
         report["issues"].append(f"{sheet.title}: 打印区域应覆盖 A1:H23")
     if not sheet.sheet_properties.pageSetUpPr.fitToPage or sheet.page_setup.fitToWidth != 1 or sheet.page_setup.fitToHeight != 1:
