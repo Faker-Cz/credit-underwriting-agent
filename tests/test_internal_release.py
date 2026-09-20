@@ -28,11 +28,39 @@ class InternalReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             for name in ("单一客户授信调查报告模版.docx", "低风险报告模版.docx"):
                 result = subprocess.run(
-                    [sys.executable, str(script), str(ASSETS / name), "--mode", "template", "--strict", "--forbidden", "浙商银行", "--forbidden", "龙华支行", "--output", str(Path(directory) / f"{name}.json")],
+                    [sys.executable, str(script), str(ASSETS / name), "--mode", "template", "--strict", "--forbidden", "龙华支行", "--output", str(Path(directory) / f"{name}.json")],
                     capture_output=True,
                     text=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_template_edition_year_is_allowed_but_report_year_is_not(self):
+        script = SKILL / "scripts" / "audit_docx.py"
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            edition = directory / "edition.docx"
+            report_year = directory / "report-year.docx"
+            document = Document()
+            document.add_paragraph("（2018年版）")
+            document.save(edition)
+            document = Document()
+            document.add_paragraph("2025年营业收入")
+            document.save(report_year)
+
+            edition_result = subprocess.run(
+                [sys.executable, str(script), str(edition), "--mode", "template", "--strict", "--output", str(directory / "edition.json")],
+                capture_output=True,
+                text=True,
+            )
+            report_year_result = subprocess.run(
+                [sys.executable, str(script), str(report_year), "--mode", "template", "--strict", "--output", str(directory / "report-year.json")],
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(edition_result.returncode, 0, edition_result.stdout + edition_result.stderr)
+        self.assertNotEqual(report_year_result.returncode, 0)
+        self.assertIn("固定时点", report_year_result.stdout)
 
     def test_loan_workbook_contract(self):
         script = SKILL / "scripts" / "audit_financial_workbook.py"

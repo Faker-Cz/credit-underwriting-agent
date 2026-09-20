@@ -233,7 +233,10 @@ def main():
         if normalized_word and normalized_word in normalized_text:
             leftovers[word] = normalized_text.count(normalized_word)
     placeholders = regex_hits(PLACEHOLDER_PATTERNS, full_text)
-    template_risks = regex_hits(TEMPLATE_RISK_PATTERNS, full_text) if args.mode == "template" else {}
+    # 封面的“（2018年版）”等版本标识属于模板元数据，不是客户报告期。
+    # 只豁免完整括号内的“四位年份+年版”，正文固定年度仍按原规则拦截。
+    template_risk_text = re.sub(r"[（(](?:19|20)\d{2}年版[）)]", "", full_text)
+    template_risks = regex_hits(TEMPLATE_RISK_PATTERNS, template_risk_text) if args.mode == "template" else {}
     sensitive_data = regex_hits(REPORT_SENSITIVE_PATTERNS, full_text) if args.mode == "report" else {}
     vague = {word: full_text.count(word) for word in VAGUE_PHRASES if word in full_text}
     empty_headings = [{"paragraph": i, "text": value.strip()} for i, value in enumerate(paragraphs) if re.fullmatch(r"[（(]?[一二三四五六七八九十0-9]+[）).、]", value.strip())]
@@ -277,7 +280,7 @@ def main():
         "forbidden_leftovers": leftovers, "placeholders": placeholders, "template_risks": template_risks,
         "sensitive_data_hits": sensitive_data, "automatic_numbering": numbering_stats(path),
         "vague_phrases": vague, "empty_heading_like": empty_headings, "issues": issues, "warnings": [],
-        "note": "结构检查不能替代逐页渲染。automatic_numbering记录Word自动编号定义，普通文本提取不含渲染后的编号。模板模式允许明确占位符，但不允许真实个人/机构信息、固定报告期、已勾选选项或预填结论。",
+        "note": "结构检查不能替代逐页渲染。automatic_numbering记录Word自动编号定义，普通文本提取不含渲染后的编号。模板模式允许明确占位符和封面“四位年份+年版”版本标识，但不允许真实个人信息、固定客户报告期、已勾选选项或预填结论。",
     }
 
     if args.baseline:
