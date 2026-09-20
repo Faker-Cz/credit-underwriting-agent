@@ -23,11 +23,12 @@ tmp/
 *.bak
 *.tmp
 
-# Excel默认可能含客户财务数据，不入公开仓库；
-# 仅白名单中的无客户数据流贷测算清洁模板可提交。
+# Word/Excel默认可能含客户财务数据，不入公开仓库；
+# 仅白名单中经确认的无客户数据空白模板可提交。
 !流动资金类贷款授信额度测算表.xlsx
 !单一客户授信调查报告模版.docx
 !低风险报告模版.docx
+!集团客户授信调查报告模版.docx
 
 skill/corporate-credit-investigation-cn/assets/*.xlsx
 !skill/corporate-credit-investigation-cn/assets/流动资金类贷款授信额度测算表.xlsx
